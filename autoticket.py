@@ -153,7 +153,8 @@ class Concert(object):
             session_list = session.find_elements_by_class_name('select_right_list_item')
             print('可选场次数量为：{}'.format(len(session_list)))
             if len(self.session) == 1:
-                choice = session_list[self.session[0] - 1].click()
+                choice = session_list[self.session[0] - 1]
+                choice.click()
             else:
                 for index in self.session:  # 根据优先级选择一个可行场次
                     choice = session_list[index - 1]
@@ -173,7 +174,6 @@ class Concert(object):
             if len(self.price) == 1:
                 choice = price_list[self.price[0] - 1]
                 choice.click()
-                break
             else:
                 for index in self.price:
                     choice = price_list[index - 1]
