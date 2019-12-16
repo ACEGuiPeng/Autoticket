@@ -1,4 +1,5 @@
 # coding: utf-8
+import random
 from json import loads
 from os.path import exists
 from pickle import dump, load
@@ -28,7 +29,7 @@ class Concert(object):
         self.browser = browser  # 0代表Chrome，1代表Firefox，默认为Chrome
         self.total_wait_time = 3  # 页面元素加载总等待时间
         self.refresh_wait_time = 0.3  # 页面元素等待刷新时间
-        self.intersect_wait_time = 0.5  # 间隔等待时间，防止速度过快导致问题
+        self.intersect_wait_time = [0.5, 2]  # 间隔等待时间，防止速度过快导致问题
 
         if self.target_url.find("detail.damai.cn") != -1:
             self.type = 1
@@ -79,22 +80,24 @@ class Concert(object):
             print(e)
 
     def login(self):
+        do_chrome = self.browser == 0
+        do_firefox = self.browser == 1
         if not exists('cookies.pkl'):  # 如果不存在cookie.pkl,就获取一下
-            if self.browser == 0:  # 选择了Chrome浏览器
+            if do_chrome:  # 选择了Chrome浏览器
                 self.driver = webdriver.Chrome()
-            elif self.browser == 1:  # 选择了Firefox浏览器
+            elif do_firefox:  # 选择了Firefox浏览器
                 self.driver = webdriver.Firefox()
             else:
                 raise Exception("***错误：未知的浏览器类别***")
             self.get_cookie()
             self.driver.quit()
         print('###打开浏览器，进入大麦网###')
-        if self.browser == 0:  # 选择了Chrome浏览器，并成功加载cookie，设置不载入图片，提高刷新效率
+        if do_chrome:  # 选择了Chrome浏览器，并成功加载cookie，设置不载入图片，提高刷新效率
             options = webdriver.ChromeOptions()
             prefs = {"profile.managed_default_content_settings.images": 2}
             options.add_experimental_option("prefs", prefs)
             self.driver = webdriver.Chrome(options=options)
-        elif self.browser == 1:  # 选择了火狐浏览器
+        elif do_firefox:  # 选择了火狐浏览器
             options = webdriver.FirefoxProfile()
             options.set_preference('permissions.default.image', 2)
             self.driver = webdriver.Firefox(options)
@@ -102,7 +105,6 @@ class Concert(object):
             raise Exception("***错误：未知的浏览器类别***")
         self.driver.get(self.target_url)
         self.set_cookie()
-        # self.driver.maximize_window()
         self.driver.refresh()
 
     def enter_concert(self):
@@ -112,6 +114,8 @@ class Concert(object):
                 locator = (By.XPATH, "/html/body/div[1]/div/div[3]/div[1]/a[2]/div")
             elif self.type == 2:  # piao.damai.cn
                 locator = (By.XPATH, "/html/body/div[1]/div/ul/li[2]/div/label/a[2]")
+            else:
+                raise Exception("***错误：未知的抢票网站***")
             WebDriverWait(self.driver, self.total_wait_time, self.refresh_wait_time).until(
                 EC.text_to_be_present_in_element(locator, self.nick_name))
             self.status = 1
@@ -149,33 +153,35 @@ class Concert(object):
             session_list = session.find_elements_by_class_name('select_right_list_item')
             print('可选场次数量为：{}'.format(len(session_list)))
             if len(self.session) == 1:
-                j = session_list[self.session[0] - 1].click()
+                choice = session_list[self.session[0] - 1].click()
             else:
-                for i in self.session:  # 根据优先级选择一个可行场次
-                    j = session_list[i - 1]
-                    k = self.is_class_present(j, 'presell', True)
+                for index in self.session:  # 根据优先级选择一个可行场次
+                    choice = session_list[index - 1]
+                    k = self.is_class_present(choice, 'presell', True)
                     if k:  # 如果找到了带presell的类
                         if k.text == '无票':
                             continue
                         elif k.text == '预售':
-                            j.click()
+                            choice.click()
                             break
                     else:
-                        j.click()
+                        choice.click()
                         break
 
             price_list = price.find_elements_by_class_name('select_right_list_item')
             print('可选票档数量为：{}'.format(len(price_list)))
             if len(self.price) == 1:
-                j = price_list[self.price[0] - 1].click()
+                choice = price_list[self.price[0] - 1]
+                choice.click()
+                break
             else:
-                for i in self.price:
-                    j = price_list[i - 1]
-                    k = self.is_class_present(j, 'notticket')
+                for index in self.price:
+                    choice = price_list[index - 1]
+                    k = self.is_class_present(choice, 'notticket')
                     if k:  # 存在notticket代表存在缺货登记，跳过
                         continue
                     else:
-                        j.click()
+                        choice.click()
                         break
 
             buybutton = self.driver.find_element_by_class_name('buybtn')
@@ -185,10 +191,10 @@ class Concert(object):
 
             def add_ticket():  # 设置增加票数
                 try:
-                    for i in range(self.ticket_num - 1):
-                        addbtn = WebDriverWait(self.driver, self.total_wait_time, self.refresh_wait_time).until(
+                    for _ in range(self.ticket_num - 1):
+                        add_btn = WebDriverWait(self.driver, self.total_wait_time, self.refresh_wait_time).until(
                             EC.presence_of_element_located((By.XPATH, "//div[@class='cafe-c-input-number']/a[2]")))
-                        addbtn.click()
+                        add_btn.click()
                 except:
                     raise Exception("***错误：票数增加失败***")
 
@@ -231,13 +237,13 @@ class Concert(object):
                 datelist = datepicker.find_elements_by_tag_name("span")  # 找出所有日期
                 # print(len(datelist))
                 validlist = []
-                for i in range(len(datelist)):  # 筛选出所有可选择日期
-                    j = datelist[i]
-                    k = j.get_attribute('class')
-                    if k == 'itm z-show itm-undefined z-sel' \
-                            or k == 'itm z-show itm-undefined' \
-                            or k == 'itm itm-end z-show itm-undefined':
-                        validlist.append(j)
+                for index in range(len(datelist)):  # 筛选出所有可选择日期
+                    choice = datelist[index]
+                    attribute = choice.get_attribute('class')
+                    if attribute == 'itm z-show itm-undefined z-sel' \
+                            or attribute == 'itm z-show itm-undefined' \
+                            or attribute == 'itm itm-end z-show itm-undefined':
+                        validlist.append(choice)
                 # print(len(validlist))
                 validlist[self.date - 1].click()
 
@@ -247,18 +253,18 @@ class Concert(object):
             # session = self.driver.find_element_by_id('performList')
             session_list = session.find_elements_by_tag_name('li')
             print('可选场次数量为：{}'.format(len(session_list)))
-            for i in self.session:  # 根据优先级选择一个可行场次,目前暂时没有找到有不可行日期的案例
-                j = session_list[i - 1]
-                k = j.get_attribute('class').strip()
-                if k == 'itm' or k == 'itm j_more':  # 未选中
-                    j.find_element_by_tag_name('a').click()
+            for index in self.session:  # 根据优先级选择一个可行场次,目前暂时没有找到有不可行日期的案例
+                choice = session_list[index - 1]
+                attribute = choice.get_attribute('class').strip()
+                if attribute == 'itm' or attribute == 'itm j_more':  # 未选中
+                    choice.find_element_by_tag_name('a').click()
                     break
-                elif k == 'itm itm-sel' or k == 'itm j_more itm-sel':  # 已选中
+                elif attribute == 'itm itm-sel' or attribute == 'itm j_more itm-sel':  # 已选中
                     break
-                elif k == 'itm itm-oos':  # 无法选中
+                elif attribute == 'itm itm-oos':  # 无法选中
                     continue
 
-            sleep(self.intersect_wait_time)
+            sleep(self.get_random_sleep_time())
 
             price = WebDriverWait(self.driver, self.total_wait_time, self.refresh_wait_time).until(
                 EC.presence_of_element_located(
@@ -266,15 +272,15 @@ class Concert(object):
             # price = self.driver.find_element_by_id('priceList')
             price_list = price.find_elements_by_tag_name('li')
             print('可选票档数量为：{}'.format(len(price_list)))
-            for i in self.price:
-                j = price_list[i - 1]
-                k = j.get_attribute('class').strip()
-                if k == 'itm' or k == 'itm j_more':  # 未选中
-                    j.find_element_by_tag_name('a').click()
+            for index in self.price:
+                choice = price_list[index - 1]
+                attribute = choice.get_attribute('class').strip()
+                if attribute == 'itm' or attribute == 'itm j_more':  # 未选中
+                    choice.find_element_by_tag_name('a').click()
                     break
-                elif k == 'itm itm-sel' or k == 'itm j_more itm-sel':  # 已选中
+                elif attribute == 'itm itm-sel' or attribute == 'itm j_more itm-sel':  # 已选中
                     break
-                elif k == 'itm itm-oos':  # 无法选中
+                elif attribute == 'itm itm-oos':  # 无法选中
                     continue
 
             buybutton = None
@@ -303,7 +309,7 @@ class Concert(object):
                 add = WebDriverWait(self.driver, self.total_wait_time, self.refresh_wait_time).until(
                     EC.presence_of_element_located(
                         (By.CLASS_NAME, "btn-add")))
-                for i in range(self.ticket_num - 1):
+                for index in range(self.ticket_num - 1):
                     add.click()
             buybutton.click()
             # 目前没有找到缺货没有按钮的情况
@@ -359,7 +365,7 @@ class Concert(object):
                             (By.CLASS_NAME, 'from-1')))
                     tb.find_element_by_tag_name('a').click()  # 点击选择购票人按钮
 
-                    sleep(self.intersect_wait_time)
+                    sleep(self.get_random_sleep_time())
                     # 此处好像定位不到实名者框，还没有解决
                     lb_list = WebDriverWait(self.driver, self.total_wait_time, self.refresh_wait_time).until(
                         EC.presence_of_element_located(
@@ -383,6 +389,9 @@ class Concert(object):
             print('###成功提交订单,请手动支付###')
             self.time_end = time()
             # print('###提交订单失败,请查看问题###') # 这里异常处理还有点问题
+
+    def get_random_sleep_time(self):
+        return random.random(self.intersect_wait_time[0], self.intersect_wait_time[1])
 
     def finish(self):
         if self.status == 6:  # 说明抢票成功
